@@ -1,6 +1,6 @@
 # Node.js Express Backend Template
 
-This is a simple backend template using Node.js, Express, MongoDB (Mongoose), JWT authentication, and rate limiting.
+This is a simple backend template using Node.js, Express, MongoDB (Mongoose), JWT authentication, Jest for testing, Winston logger, and rate limiting.
 
 ## Features
 - User registration and login with JWT authentication
@@ -9,6 +9,8 @@ This is a simple backend template using Node.js, Express, MongoDB (Mongoose), JW
 - Rate limiting on authentication routes
 - Environment variable support via `.env`
 - MongoDB connection via Mongoose
+- **Testing with Jest**
+- **Logging with Winston**
 - Ready for further API development
 
 ## Setup
@@ -23,6 +25,10 @@ This is a simple backend template using Node.js, Express, MongoDB (Mongoose), JW
    ```sh
    npm start
    ```
+5. **Run tests:**
+   ```sh
+   npm test
+   ```
 
 ## Endpoints
 - `POST /api/user/register` — Register a new user
@@ -31,3 +37,5 @@ This is a simple backend template using Node.js, Express, MongoDB (Mongoose), JW
 ## Notes
 - Adjust rate limits and JWT expiry as needed.
 - Extend the user model and add more routes as your project grows.
+- **Jest is used for unit and integration testing.**
+- **Winston is used for logging application events and errors.**
