@@ -5,6 +5,7 @@ const userRoutes = require('./routes/user');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
+const logger = require('./utils/logger');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -25,5 +26,5 @@ app.use(globalLimiter);
 app.use('/api/user', userRoutes);
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  logger.info(`Server running on port ${PORT}`);
 });
