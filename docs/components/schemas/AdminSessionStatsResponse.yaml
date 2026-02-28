@@ -1,0 +1,15 @@
+type: object
+required:
+  - totalUsers
+  - usersWithActiveSessions
+  - totalActiveSessions
+  - expiredSessions
+properties:
+  totalUsers:
+    type: integer
+  usersWithActiveSessions:
+    type: integer
+  totalActiveSessions:
+    type: integer
+  expiredSessions:
+    type: integer

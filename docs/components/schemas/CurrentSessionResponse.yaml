@@ -1,0 +1,21 @@
+type: object
+required:
+  - user
+  - session
+properties:
+  user:
+    $ref: ../../openapi.yaml#/components/schemas/UserPublic
+  session:
+    type: object
+    required:
+      - sessionId
+    properties:
+      sessionId:
+        type: string
+      lastActivity:
+        type: string
+        format: date-time
+      userAgent:
+        type: string
+      ipAddress:
+        type: string

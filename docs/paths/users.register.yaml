@@ -1,0 +1,37 @@
+post:
+  tags: [Users]
+  summary: Register user
+  description: Creates a user, sends verification email, and issues a session (sets auth cookies).
+  parameters:
+    - $ref: ../openapi.yaml#/components/parameters/XRequestId
+  security:
+    - CsrfCookie: []
+      CsrfHeader: []
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../openapi.yaml#/components/schemas/RegisterRequest
+  responses:
+    '201':
+      description: Created
+      headers:
+        x-request-id:
+          $ref: ../openapi.yaml#/components/headers/XRequestId
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/RegisterResponse
+    '400':
+      description: Bad Request
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/ErrorResponse
+    '409':
+      description: Conflict
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/ErrorResponse

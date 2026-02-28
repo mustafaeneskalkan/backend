@@ -1,0 +1,12 @@
+type: object
+required:
+  - message
+  - user
+  - session
+properties:
+  message:
+    type: string
+  user:
+    $ref: ../../openapi.yaml#/components/schemas/UserPublic
+  session:
+    $ref: ../../openapi.yaml#/components/schemas/SessionIssued

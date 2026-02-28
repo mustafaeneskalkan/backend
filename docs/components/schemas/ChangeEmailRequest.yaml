@@ -1,0 +1,7 @@
+type: object
+required:
+  - newEmail
+properties:
+  newEmail:
+    type: string
+    format: email

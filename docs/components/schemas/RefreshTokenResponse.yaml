@@ -1,0 +1,18 @@
+type: object
+required:
+  - message
+  - session
+properties:
+  message:
+    type: string
+  session:
+    type: object
+    required:
+      - sessionId
+      - expiresIn
+    properties:
+      sessionId:
+        type: string
+      expiresIn:
+        type: integer
+        examples: [900]

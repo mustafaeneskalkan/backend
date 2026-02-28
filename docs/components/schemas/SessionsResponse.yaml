@@ -1,0 +1,26 @@
+type: object
+required:
+  - sessions
+  - total
+properties:
+  sessions:
+    type: array
+    items:
+      type: object
+      required:
+        - sessionId
+        - isCurrent
+      properties:
+        sessionId:
+          type: string
+        lastActivity:
+          type: string
+          format: date-time
+        userAgent:
+          type: string
+        ipAddress:
+          type: string
+        isCurrent:
+          type: boolean
+  total:
+    type: integer

@@ -1,8 +1,12 @@
 import express from 'express';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
+import { requireCsrf } from '../middleware/csrf.js';
 import { getSessionStats, cleanupExpiredSessions } from '../utils/session-cleanup.js';
 
 const router = express.Router();
+
+// CSRF double-submit protection (no-op for GET/HEAD/OPTIONS)
+router.use(requireCsrf);
 
 /**
  * Get session statistics (Admin only)

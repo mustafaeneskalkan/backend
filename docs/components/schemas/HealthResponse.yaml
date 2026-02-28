@@ -1,0 +1,11 @@
+type: object
+required:
+  - status
+  - env
+properties:
+  status:
+    type: string
+    examples: [ok]
+  env:
+    type: string
+    examples: [development]

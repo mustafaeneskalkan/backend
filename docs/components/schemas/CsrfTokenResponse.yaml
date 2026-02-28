@@ -1,0 +1,6 @@
+type: object
+required:
+  - csrfToken
+properties:
+  csrfToken:
+    type: string

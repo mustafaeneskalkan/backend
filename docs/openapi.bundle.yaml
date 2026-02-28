@@ -1,0 +1,1011 @@
+openapi: 3.1.0
+info:
+  title: Backend Template API
+  version: 1.0.1
+  description: |
+    Express + MongoDB backend with cookie-based JWT auth, session management, CSRF double-submit protection,
+    and admin session tooling.
+servers:
+  - url: http://localhost:4000
+tags:
+  - name: Misc
+  - name: Users
+  - name: AdminAuth
+  - name: AdminSessions
+paths:
+  /health:
+    get:
+      tags:
+        - Misc
+      summary: Health check
+      description: Returns service status and the current environment.
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+      security: []
+      responses:
+        '200':
+          description: OK
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /csrf-token:
+    get:
+      tags:
+        - Misc
+      summary: Issue CSRF token
+      description: |
+        Issues a CSRF token using the double-submit cookie pattern.
+        The response sets the `XSRF-TOKEN` cookie and also returns the token in JSON.
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+      security: []
+      responses:
+        '200':
+          description: OK
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CsrfTokenResponse'
+  /api/users/register:
+    post:
+      tags:
+        - Users
+      summary: Register user
+      description: Creates a user, sends verification email, and issues a session (sets auth cookies).
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+      security:
+        - CsrfCookie: []
+          CsrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Created
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/users/login:
+    post:
+      tags:
+        - Users
+      summary: Login
+      description: Authenticates a user and issues a new session (sets auth cookies).
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+      security:
+        - CsrfCookie: []
+          CsrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: OK
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/users/refresh-token:
+    post:
+      tags:
+        - Users
+      summary: Refresh access token
+      description: Rotates refresh token and returns a new access token (cookies are updated).
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+      security:
+        - RefreshTokenCookie: []
+          SessionIdCookie: []
+          CsrfCookie: []
+          CsrfHeader: []
+      responses:
+        '200':
+          description: OK
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshTokenResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/users/verify-email:
+    post:
+      tags:
+        - Users
+      summary: Verify email
+      description: Marks the user's email as verified using the emailed token.
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+      security:
+        - CsrfCookie: []
+          CsrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyEmailRequest'
+      responses:
+        '200':
+          description: OK
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyEmailResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/users/verify-email-change:
+    post:
+      tags:
+        - Users
+      summary: Verify email change
+      description: Finalizes a pending email change using the emailed token.
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+      security:
+        - CsrfCookie: []
+          CsrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyEmailRequest'
+      responses:
+        '200':
+          description: OK
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyEmailResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/users/resend-verification:
+    post:
+      tags:
+        - Users
+      summary: Resend verification email
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+      security:
+        - CsrfCookie: []
+          CsrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResendVerificationRequest'
+      responses:
+        '200':
+          description: OK
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/users/request-password-change:
+    post:
+      tags:
+        - Users
+      summary: Request password reset
+      description: |
+        Triggers a password reset email if the account exists.
+        For anti-enumeration, a successful response does not confirm account existence.
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+      security:
+        - CsrfCookie: []
+          CsrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestPasswordChangeRequest'
+      responses:
+        '200':
+          description: OK
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/users/reset-password:
+    post:
+      tags:
+        - Users
+      summary: Reset password
+      description: Resets a password using the emailed token.
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+      security:
+        - CsrfCookie: []
+          CsrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '200':
+          description: OK
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/users/logout:
+    post:
+      tags:
+        - Users
+      summary: Logout
+      description: Invalidates the current session and clears auth cookies.
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+      security:
+        - AccessTokenCookie: []
+          CsrfCookie: []
+          CsrfHeader: []
+      responses:
+        '200':
+          description: OK
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/users/logout-all:
+    post:
+      tags:
+        - Users
+      summary: Logout all
+      description: Invalidates all sessions for the current user and clears auth cookies.
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+      security:
+        - AccessTokenCookie: []
+          CsrfCookie: []
+          CsrfHeader: []
+      responses:
+        '200':
+          description: OK
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/users/session:
+    get:
+      tags:
+        - Users
+      summary: Get current session
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+      security:
+        - AccessTokenCookie: []
+      responses:
+        '200':
+          description: OK
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentSessionResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/users/sessions:
+    get:
+      tags:
+        - Users
+      summary: List active sessions
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+      security:
+        - AccessTokenCookie: []
+      responses:
+        '200':
+          description: OK
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionsResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/users/sessions/{sessionId}:
+    delete:
+      tags:
+        - Users
+      summary: Terminate a session
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/SessionIdPath'
+      security:
+        - AccessTokenCookie: []
+          CsrfCookie: []
+          CsrfHeader: []
+      responses:
+        '200':
+          description: OK
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/users/change-email:
+    post:
+      tags:
+        - Users
+      summary: Change email (request)
+      description: |
+        Requests an email change and sends a verification email to the new address.
+        Requires an authenticated, verified account.
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+      security:
+        - AccessTokenCookie: []
+          CsrfCookie: []
+          CsrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeEmailRequest'
+      responses:
+        '200':
+          description: OK
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/users/change-password:
+    post:
+      tags:
+        - Users
+      summary: Change password
+      description: Changes password and clears auth cookies (user must login again).
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+      security:
+        - AccessTokenCookie: []
+          CsrfCookie: []
+          CsrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '200':
+          description: OK
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/admin/auth/login:
+    post:
+      tags:
+        - AdminAuth
+      summary: Admin login
+      description: |
+        Authenticates an Admin user and issues a session.
+        If `CMS_ORIGIN` is configured, requests are restricted to the CMS origin (Origin/Referer host match).
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+      security:
+        - CsrfCookie: []
+          CsrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: OK
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/admin/sessions/stats:
+    get:
+      tags:
+        - AdminSessions
+      summary: Get session statistics
+      description: Admin-only session stats.
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+      security:
+        - AccessTokenCookie: []
+      responses:
+        '200':
+          description: OK
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSessionStatsResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/admin/sessions/cleanup:
+    post:
+      tags:
+        - AdminSessions
+      summary: Trigger session cleanup
+      description: Admin-only manual cleanup of expired sessions.
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+      security:
+        - AccessTokenCookie: []
+          CsrfCookie: []
+          CsrfHeader: []
+      responses:
+        '200':
+          description: OK
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  securitySchemes:
+    AccessTokenCookie:
+      type: apiKey
+      in: cookie
+      name: accessToken
+      description: JWT access token stored in an HttpOnly cookie.
+    RefreshTokenCookie:
+      type: apiKey
+      in: cookie
+      name: refreshToken
+      description: JWT refresh token stored in an HttpOnly cookie.
+    SessionIdCookie:
+      type: apiKey
+      in: cookie
+      name: sessionId
+      description: Session id associated with the refresh token.
+    CsrfCookie:
+      type: apiKey
+      in: cookie
+      name: XSRF-TOKEN
+      description: CSRF cookie used for double-submit protection.
+    CsrfHeader:
+      type: apiKey
+      in: header
+      name: x-xsrf-token
+      description: CSRF header used for double-submit protection.
+  headers:
+    XRequestId:
+      description: Request correlation id.
+      schema:
+        type: string
+        format: uuid
+  parameters:
+    XRequestId:
+      name: x-request-id
+      in: header
+      required: false
+      description: Optional request correlation id. If omitted, the server generates one.
+      schema:
+        type: string
+        format: uuid
+    SessionIdPath:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Session identifier.
+  schemas:
+    ErrorResponse:
+      type: object
+      additionalProperties: true
+      required:
+        - error
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        details:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+            - type: object
+    MessageResponse:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - env
+      properties:
+        status:
+          type: string
+          examples:
+            - ok
+        env:
+          type: string
+          examples:
+            - development
+    CsrfTokenResponse:
+      type: object
+      required:
+        - csrfToken
+      properties:
+        csrfToken:
+          type: string
+    UserPublic:
+      type: object
+      required:
+        - id
+        - username
+        - email
+        - emailVerified
+      properties:
+        id:
+          type: string
+          description: MongoDB ObjectId.
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        role:
+          type: string
+        emailVerified:
+          type: boolean
+        lastLoginAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    SessionIssued:
+      type: object
+      required:
+        - sessionId
+        - expiresIn
+      properties:
+        sessionId:
+          type: string
+        expiresIn:
+          type: integer
+          description: Seconds until access token expiration.
+          examples:
+            - 900
+    RegisterRequest:
+      type: object
+      required:
+        - username
+        - email
+        - password
+      properties:
+        username:
+          type: string
+          minLength: 3
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+    RegisterResponse:
+      type: object
+      required:
+        - message
+        - user
+        - session
+      properties:
+        message:
+          type: string
+        user:
+          $ref: '#/components/schemas/UserPublic'
+        session:
+          $ref: '#/components/schemas/SessionIssued'
+    LoginRequest:
+      type: object
+      required:
+        - usernameOrEmail
+        - password
+      properties:
+        usernameOrEmail:
+          type: string
+        password:
+          type: string
+    LoginResponse:
+      type: object
+      required:
+        - message
+        - user
+        - session
+      properties:
+        message:
+          type: string
+        user:
+          $ref: '#/components/schemas/UserPublic'
+        session:
+          $ref: '#/components/schemas/SessionIssued'
+    VerifyEmailRequest:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+    VerifyEmailResponse:
+      type: object
+      required:
+        - message
+        - user
+      properties:
+        message:
+          type: string
+        user:
+          $ref: '#/components/schemas/UserPublic'
+    ResendVerificationRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+    RefreshTokenResponse:
+      type: object
+      required:
+        - message
+        - session
+      properties:
+        message:
+          type: string
+        session:
+          type: object
+          required:
+            - sessionId
+            - expiresIn
+          properties:
+            sessionId:
+              type: string
+            expiresIn:
+              type: integer
+              examples:
+                - 900
+    CurrentSessionResponse:
+      type: object
+      required:
+        - user
+        - session
+      properties:
+        user:
+          $ref: '#/components/schemas/UserPublic'
+        session:
+          type: object
+          required:
+            - sessionId
+          properties:
+            sessionId:
+              type: string
+            lastActivity:
+              type: string
+              format: date-time
+            userAgent:
+              type: string
+            ipAddress:
+              type: string
+    SessionsResponse:
+      type: object
+      required:
+        - sessions
+        - total
+      properties:
+        sessions:
+          type: array
+          items:
+            type: object
+            required:
+              - sessionId
+              - isCurrent
+            properties:
+              sessionId:
+                type: string
+              lastActivity:
+                type: string
+                format: date-time
+              userAgent:
+                type: string
+              ipAddress:
+                type: string
+              isCurrent:
+                type: boolean
+        total:
+          type: integer
+    ChangeEmailRequest:
+      type: object
+      required:
+        - newEmail
+      properties:
+        newEmail:
+          type: string
+          format: email
+    ChangePasswordRequest:
+      type: object
+      required:
+        - currentPassword
+        - newPassword
+      properties:
+        currentPassword:
+          type: string
+        newPassword:
+          type: string
+          minLength: 8
+    RequestPasswordChangeRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+    ResetPasswordRequest:
+      type: object
+      required:
+        - token
+        - newPassword
+      properties:
+        token:
+          type: string
+        newPassword:
+          type: string
+          minLength: 8
+    AdminSessionStatsResponse:
+      type: object
+      required:
+        - totalUsers
+        - usersWithActiveSessions
+        - totalActiveSessions
+        - expiredSessions
+      properties:
+        totalUsers:
+          type: integer
+        usersWithActiveSessions:
+          type: integer
+        totalActiveSessions:
+          type: integer
+        expiredSessions:
+          type: integer

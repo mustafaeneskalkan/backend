@@ -1,0 +1,27 @@
+type: object
+required:
+  - id
+  - username
+  - email
+  - emailVerified
+properties:
+  id:
+    type: string
+    description: MongoDB ObjectId.
+  username:
+    type: string
+  email:
+    type: string
+    format: email
+  name:
+    type: string
+  role:
+    type: string
+  emailVerified:
+    type: boolean
+  lastLoginAt:
+    type: string
+    format: date-time
+  createdAt:
+    type: string
+    format: date-time

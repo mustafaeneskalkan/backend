@@ -1,5 +1,6 @@
 import cron from 'node-cron';
 import User from '../models/user.js';
+import Session from '../models/session.js';
 import logger from './logger.js';
 
 /**
@@ -8,22 +9,13 @@ import logger from './logger.js';
 export const cleanupExpiredSessions = async (): Promise<void> => {
   try {
     logger.info('Starting session cleanup...');
-    
-    const result = await User.updateMany(
-      {},
-      {
-        $pull: {
-          sessions: {
-            $or: [
-              { expiresAt: { $lt: new Date() } },
-              { isActive: false }
-            ]
-          }
-        }
-      }
-    );
+    const now = new Date();
 
-    logger.info(`Session cleanup completed. Modified ${result.modifiedCount} users.`);
+    const result = await Session.deleteMany({
+      $or: [{ expiresAt: { $lte: now } }, { isActive: false }],
+    });
+
+    logger.info(`Session cleanup completed. Deleted ${result.deletedCount ?? 0} sessions.`);
   } catch (error) {
     logger.error('Session cleanup failed:', error);
   }
@@ -47,16 +39,12 @@ export const startSessionCleanup = (): void => {
  */
 export const cleanupUserSessions = async (userId: string): Promise<void> => {
   try {
-    const user = await User.findById(userId);
-    if (!user) {
-      return;
-    }
+    const now = new Date();
+    await Session.deleteMany({
+      userId,
+      $or: [{ expiresAt: { $lte: now } }, { isActive: false }],
+    });
 
-    user.sessions = user.sessions?.filter((session: any) => 
-      session.expiresAt > new Date() && session.isActive
-    ) || [];
-    
-    await user.save();
     logger.debug(`Cleaned up sessions for user ${userId}`);
   } catch (error) {
     logger.error(`Failed to cleanup sessions for user ${userId}:`, error);
@@ -73,59 +61,28 @@ export const getSessionStats = async (): Promise<{
   expiredSessions: number;
 }> => {
   try {
+    const now = new Date();
     const totalUsers = await User.countDocuments();
-    
-    const pipeline = [
-      {
-        $project: {
-          activeSessions: {
-            $filter: {
-              input: '$sessions',
-              cond: {
-                $and: [
-                  { $eq: ['$$this.isActive', true] },
-                  { $gt: ['$$this.expiresAt', new Date()] }
-                ]
-              }
-            }
-          },
-          expiredSessions: {
-            $filter: {
-              input: '$sessions',
-              cond: {
-                $or: [
-                  { $eq: ['$$this.isActive', false] },
-                  { $lt: ['$$this.expiresAt', new Date()] }
-                ]
-              }
-            }
-          }
-        }
-      },
-      {
-        $group: {
-          _id: null,
-          usersWithActiveSessions: {
-            $sum: {
-              $cond: [{ $gt: [{ $size: '$activeSessions' }, 0] }, 1, 0]
-            }
-          },
-          totalActiveSessions: { $sum: { $size: '$activeSessions' } },
-          expiredSessions: { $sum: { $size: '$expiredSessions' } }
-        }
-      }
-    ];
 
-    const result = await User.aggregate(pipeline);
-    const stats = result[0] || {
-      usersWithActiveSessions: 0,
-      totalActiveSessions: 0,
-      expiredSessions: 0
-    };
+    const totalActiveSessions = await Session.countDocuments({
+      isActive: true,
+      expiresAt: { $gt: now },
+    });
+
+    const userIdsWithActive = await Session.distinct('userId', {
+      isActive: true,
+      expiresAt: { $gt: now },
+    });
+
+    const expiredSessions = await Session.countDocuments({
+      $or: [{ isActive: false }, { expiresAt: { $lte: now } }],
+    });
 
     return {
       totalUsers,
-      ...stats
+      usersWithActiveSessions: userIdsWithActive.length,
+      totalActiveSessions,
+      expiredSessions,
     };
   } catch (error) {
     logger.error('Failed to get session stats:', error);

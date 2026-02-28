@@ -1,0 +1,11 @@
+type: object
+required:
+  - sessionId
+  - expiresIn
+properties:
+  sessionId:
+    type: string
+  expiresIn:
+    type: integer
+    description: Seconds until access token expiration.
+    examples: [900]

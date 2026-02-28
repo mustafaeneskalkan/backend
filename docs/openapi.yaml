@@ -1,0 +1,166 @@
+openapi: 3.1.0
+info:
+  title: Backend Template API
+  version: 1.0.1
+  description: |
+    Express + MongoDB backend with cookie-based JWT auth, session management, CSRF double-submit protection,
+    and admin session tooling.
+
+servers:
+  - url: http://localhost:4000
+
+tags:
+  - name: Misc
+  - name: Users
+  - name: AdminAuth
+  - name: AdminSessions
+
+paths:
+  /health:
+    $ref: ./paths/health.yaml
+  /csrf-token:
+    $ref: ./paths/csrf-token.yaml
+
+  /api/users/register:
+    $ref: ./paths/users.register.yaml
+  /api/users/login:
+    $ref: ./paths/users.login.yaml
+  /api/users/refresh-token:
+    $ref: ./paths/users.refresh-token.yaml
+  /api/users/verify-email:
+    $ref: ./paths/users.verify-email.yaml
+  /api/users/verify-email-change:
+    $ref: ./paths/users.verify-email-change.yaml
+  /api/users/resend-verification:
+    $ref: ./paths/users.resend-verification.yaml
+  /api/users/request-password-change:
+    $ref: ./paths/users.request-password-change.yaml
+  /api/users/reset-password:
+    $ref: ./paths/users.reset-password.yaml
+
+  /api/users/logout:
+    $ref: ./paths/users.logout.yaml
+  /api/users/logout-all:
+    $ref: ./paths/users.logout-all.yaml
+  /api/users/session:
+    $ref: ./paths/users.session.yaml
+  /api/users/sessions:
+    $ref: ./paths/users.sessions.yaml
+  /api/users/sessions/{sessionId}:
+    $ref: ./paths/users.sessions.sessionId.yaml
+  /api/users/change-email:
+    $ref: ./paths/users.change-email.yaml
+  /api/users/change-password:
+    $ref: ./paths/users.change-password.yaml
+
+  /api/admin/auth/login:
+    $ref: ./paths/admin-auth.login.yaml
+  /api/admin/sessions/stats:
+    $ref: ./paths/admin-sessions.stats.yaml
+  /api/admin/sessions/cleanup:
+    $ref: ./paths/admin-sessions.cleanup.yaml
+
+components:
+  securitySchemes:
+    AccessTokenCookie:
+      type: apiKey
+      in: cookie
+      name: accessToken
+      description: JWT access token stored in an HttpOnly cookie.
+    RefreshTokenCookie:
+      type: apiKey
+      in: cookie
+      name: refreshToken
+      description: JWT refresh token stored in an HttpOnly cookie.
+    SessionIdCookie:
+      type: apiKey
+      in: cookie
+      name: sessionId
+      description: Session id associated with the refresh token.
+    CsrfCookie:
+      type: apiKey
+      in: cookie
+      name: XSRF-TOKEN
+      description: CSRF cookie used for double-submit protection.
+    CsrfHeader:
+      type: apiKey
+      in: header
+      name: x-xsrf-token
+      description: CSRF header used for double-submit protection.
+
+  headers:
+    XRequestId:
+      description: Request correlation id.
+      schema:
+        type: string
+        format: uuid
+
+  parameters:
+    XRequestId:
+      name: x-request-id
+      in: header
+      required: false
+      description: Optional request correlation id. If omitted, the server generates one.
+      schema:
+        type: string
+        format: uuid
+    SessionIdPath:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Session identifier.
+
+  schemas:
+    ErrorResponse:
+      $ref: ./components/schemas/ErrorResponse.yaml
+    MessageResponse:
+      $ref: ./components/schemas/MessageResponse.yaml
+    HealthResponse:
+      $ref: ./components/schemas/HealthResponse.yaml
+    CsrfTokenResponse:
+      $ref: ./components/schemas/CsrfTokenResponse.yaml
+
+    UserPublic:
+      $ref: ./components/schemas/UserPublic.yaml
+    SessionIssued:
+      $ref: ./components/schemas/SessionIssued.yaml
+
+    RegisterRequest:
+      $ref: ./components/schemas/RegisterRequest.yaml
+    RegisterResponse:
+      $ref: ./components/schemas/RegisterResponse.yaml
+
+    LoginRequest:
+      $ref: ./components/schemas/LoginRequest.yaml
+    LoginResponse:
+      $ref: ./components/schemas/LoginResponse.yaml
+
+    VerifyEmailRequest:
+      $ref: ./components/schemas/VerifyEmailRequest.yaml
+    VerifyEmailResponse:
+      $ref: ./components/schemas/VerifyEmailResponse.yaml
+
+    ResendVerificationRequest:
+      $ref: ./components/schemas/ResendVerificationRequest.yaml
+
+    RefreshTokenResponse:
+      $ref: ./components/schemas/RefreshTokenResponse.yaml
+    CurrentSessionResponse:
+      $ref: ./components/schemas/CurrentSessionResponse.yaml
+    SessionsResponse:
+      $ref: ./components/schemas/SessionsResponse.yaml
+
+    ChangeEmailRequest:
+      $ref: ./components/schemas/ChangeEmailRequest.yaml
+    ChangePasswordRequest:
+      $ref: ./components/schemas/ChangePasswordRequest.yaml
+
+    RequestPasswordChangeRequest:
+      $ref: ./components/schemas/RequestPasswordChangeRequest.yaml
+    ResetPasswordRequest:
+      $ref: ./components/schemas/ResetPasswordRequest.yaml
+
+    AdminSessionStatsResponse:
+      $ref: ./components/schemas/AdminSessionStatsResponse.yaml

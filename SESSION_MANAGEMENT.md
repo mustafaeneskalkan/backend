@@ -2,25 +2,83 @@
 
 This backend template includes comprehensive session management with JWT-based authentication, refresh tokens, and session cleanup.
 
+Important: authentication is **cookie-based**. Access + refresh tokens are stored in **httpOnly cookies** and are not returned to the client as JSON tokens.
+
 ## Features
 
 - **Secure Session Management**: Each user session is tracked with unique session IDs
-- **JWT Access & Refresh Tokens**: Short-lived access tokens (15 min) with long-lived refresh tokens (7 days)
+- **JWT Access & Refresh Tokens**: Short-lived access tokens (15 min) with long-lived refresh tokens (7 days), stored in **httpOnly cookies**
 - **Multiple Device Support**: Users can login from multiple devices with up to 5 concurrent sessions
-- **Automatic Cleanup**: Expired sessions are automatically cleaned up every hour
+- **Automatic Cleanup**: Expired/inactive sessions are automatically cleaned up every hour
 - **Session Security**: Sessions are invalidated when password changes
 - **Email Verification**: Required for sensitive operations
+
+## CSRF + Cookies (How to call the API)
+
+All non-GET `/api/*` endpoints use CSRF **double-submit** protection:
+
+1) `GET /csrf-token` → server sets a non-httpOnly CSRF cookie (default: `XSRF-TOKEN`) and returns `{ csrfToken }`
+2) For every `POST`/`PUT`/`DELETE` request to `/api/*`, send header `x-xsrf-token: <csrfToken>` and include cookies (`credentials: 'include'`).
+
+Auth cookies are issued on login/register and then sent automatically:
+
+- `accessToken` (path `/`) – used for authentication
+- `refreshToken` (path `/api/users`) – used for token refresh rotation
+- `sessionId` (path `/api/users`) – session identifier
+
+## Refresh token storage
+
+Refresh tokens are stored **hashed at rest** (HMAC). Deployments that switch from plaintext refresh tokens to hash-only validation will require users to re-login to obtain new refresh tokens.
 
 ## Environment Variables
 
 Add these to your `.env` file:
 
 ```env
-JWT_SECRET="your-access-token-secret"
+JWT_ACCESS_SECRET="your-access-token-secret"
 JWT_REFRESH_SECRET="your-refresh-token-secret"
+
+# Optional: use a separate secret for email verification tokens
+JWT_EMAIL_VERIFY_SECRET="your-email-verification-secret"
+
+# Optional: use a separate secret for password reset tokens
+JWT_PASSWORD_RESET_SECRET="your-password-reset-secret"
+
+# Optional: secret used to HMAC-hash refresh tokens at rest (falls back to JWT_REFRESH_SECRET)
+REFRESH_TOKEN_HASH_SECRET="your-refresh-token-hash-secret"
+
+# Optional: session limits
+MAX_ACTIVE_SESSIONS_PER_USER=5
+
+# Optional: throttle session lastActivity DB writes
+SESSION_ACTIVITY_THROTTLE_SECONDS=300
+
+# Required for email links
+FRONTEND_URL="http://localhost:3000"
+
+# Optional: cookie config
+# COOKIE_SAME_SITE=lax|strict|none
+# COOKIE_SECURE=true|false
+# COOKIE_DOMAIN=example.com
+
+# Optional: override cookie names
+# CSRF_COOKIE_NAME=XSRF-TOKEN
+# ACCESS_TOKEN_COOKIE_NAME=accessToken
+# REFRESH_TOKEN_COOKIE_NAME=refreshToken
+# SESSION_ID_COOKIE_NAME=sessionId
+
+# Optional: only allow /api/admin/auth/* from this origin
+# CMS_ORIGIN="https://cms.example.com"
 ```
 
+## Request IDs
+
+The server generates a request id for every request and returns it in the `x-request-id` response header.
+Clients may also provide `X-Request-ID`; the server will propagate it.
+
 ## API Endpoints
+
+Unless stated otherwise, all `POST`/`DELETE` routes below require the CSRF header `x-xsrf-token` and cookies.
 
 ### Authentication Routes
 
@@ -45,6 +103,10 @@ Register a new user account.
     "username": "johndoe",
     "email": "john@example.com",
     "emailVerified": false
+  },
+  "session": {
+    "sessionId": "uuid-session-id",
+    "expiresIn": 900
   }
 }
 ```
@@ -75,8 +137,6 @@ Login with username/email and password.
   },
   "session": {
     "sessionId": "uuid-session-id",
-    "accessToken": "jwt-access-token",
-    "refreshToken": "jwt-refresh-token",
     "expiresIn": 900
   }
 }
@@ -85,13 +145,7 @@ Login with username/email and password.
 #### POST `/api/users/refresh-token`
 Refresh access token using refresh token.
 
-**Request Body:**
-```json
-{
-  "refreshToken": "current-refresh-token",
-  "sessionId": "current-session-id"
-}
-```
+No request body is required. The server reads `refreshToken` + `sessionId` from httpOnly cookies and rotates them.
 
 **Response:**
 ```json
@@ -99,8 +153,6 @@ Refresh access token using refresh token.
   "message": "Token refreshed successfully",
   "session": {
     "sessionId": "uuid-session-id",
-    "accessToken": "new-jwt-access-token",
-    "refreshToken": "new-jwt-refresh-token",
     "expiresIn": 900
   }
 }
@@ -111,10 +163,7 @@ Refresh access token using refresh token.
 #### POST `/api/users/logout`
 Logout from current session.
 
-**Headers:**
-```
-Authorization: Bearer <access-token>
-```
+Requires a valid `accessToken` cookie.
 
 **Response:**
 ```json
@@ -126,10 +175,7 @@ Authorization: Bearer <access-token>
 #### POST `/api/users/logout-all`
 Logout from all sessions.
 
-**Headers:**
-```
-Authorization: Bearer <access-token>
-```
+Requires a valid `accessToken` cookie.
 
 **Response:**
 ```json
@@ -141,10 +187,7 @@ Authorization: Bearer <access-token>
 #### GET `/api/users/session`
 Get current session information.
 
-**Headers:**
-```
-Authorization: Bearer <access-token>
-```
+Requires a valid `accessToken` cookie.
 
 **Response:**
 ```json
@@ -171,10 +214,7 @@ Authorization: Bearer <access-token>
 #### GET `/api/users/sessions`
 Get all active sessions for the user.
 
-**Headers:**
-```
-Authorization: Bearer <access-token>
-```
+Requires a valid `accessToken` cookie.
 
 **Response:**
 ```json
@@ -202,10 +242,7 @@ Authorization: Bearer <access-token>
 #### DELETE `/api/users/sessions/:sessionId`
 Terminate a specific session.
 
-**Headers:**
-```
-Authorization: Bearer <access-token>
-```
+Requires a valid `accessToken` cookie and CSRF.
 
 **Response:**
 ```json
@@ -256,15 +293,69 @@ Resend email verification.
 }
 ```
 
+### Email Change Routes
+
+This backend implements a two-step email change:
+1) authenticated user requests the change (stores a **pending email** + sends a verification token)
+2) frontend submits the token to the backend to finalize the change
+
+#### POST `/api/users/change-email`
+Request an email change. The account email is **not** changed until verification succeeds.
+
+Requires a valid `accessToken` cookie, CSRF, and a verified email (`EMAIL_NOT_VERIFIED` otherwise).
+
+**Request Body:**
+```json
+{
+  "newEmail": "newaddress@example.com"
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Email change verification sent"
+}
+```
+
+#### POST `/api/users/verify-email-change`
+Verify the email change token and finalize the email update.
+
+Requires CSRF.
+
+**Request Body:**
+```json
+{
+  "token": "verification-jwt-token"
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Email changed and verified successfully",
+  "user": {
+    "id": "user_id",
+    "username": "johndoe",
+    "email": "newaddress@example.com",
+    "emailVerified": true
+  }
+}
+```
+
 ### Admin Routes (Require Admin Role)
+
+Admin auth is also cookie-based.
+
+#### POST `/api/admin/auth/login`
+Login as an admin user.
+
+If `CMS_ORIGIN` is set, requests must originate from that origin (otherwise you’ll get `CMS_ORIGIN_BLOCKED`).
 
 #### GET `/api/admin/sessions/stats`
 Get session statistics.
 
-**Headers:**
-```
-Authorization: Bearer <admin-access-token>
-```
+Requires a valid `accessToken` cookie for an `Admin` user.
 
 **Response:**
 ```json
@@ -279,10 +370,7 @@ Authorization: Bearer <admin-access-token>
 #### POST `/api/admin/sessions/cleanup`
 Manually trigger session cleanup.
 
-**Headers:**
-```
-Authorization: Bearer <admin-access-token>
-```
+Requires a valid `accessToken` cookie for an `Admin` user and CSRF.
 
 **Response:**
 ```json
@@ -298,9 +386,15 @@ Authorization: Bearer <admin-access-token>
 ```javascript
 class AuthService {
   constructor() {
-    this.accessToken = localStorage.getItem('accessToken');
-    this.refreshToken = localStorage.getItem('refreshToken');
-    this.sessionId = localStorage.getItem('sessionId');
+    this.csrfToken = null;
+  }
+
+  async getCSRFToken() {
+    if (this.csrfToken) return this.csrfToken;
+    const res = await fetch('/csrf-token', { credentials: 'include' });
+    const data = await res.json();
+    this.csrfToken = data.csrfToken;
+    return this.csrfToken;
   }
 
   async login(usernameOrEmail, password) {
@@ -308,7 +402,7 @@ class AuthService {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-XSRF-TOKEN': await this.getCSRFToken()
+        'x-xsrf-token': await this.getCSRFToken()
       },
       credentials: 'include',
       body: JSON.stringify({ usernameOrEmail, password })
@@ -316,86 +410,42 @@ class AuthService {
 
     if (response.ok) {
       const data = await response.json();
-      this.setTokens(data.session);
       return data;
     }
     throw new Error('Login failed');
   }
 
   async refreshAccessToken() {
-    try {
-      const response = await fetch('/api/users/refresh-token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-XSRF-TOKEN': await this.getCSRFToken()
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          refreshToken: this.refreshToken,
-          sessionId: this.sessionId
-        })
-      });
+    const response = await fetch('/api/users/refresh-token', {
+      method: 'POST',
+      headers: {
+        'x-xsrf-token': await this.getCSRFToken(),
+      },
+      credentials: 'include',
+    });
 
-      if (response.ok) {
-        const data = await response.json();
-        this.setTokens(data.session);
-        return data.session.accessToken;
-      }
-      
-      this.logout();
-      throw new Error('Token refresh failed');
-    } catch (error) {
-      this.logout();
-      throw error;
-    }
+    if (!response.ok) throw new Error('Token refresh failed');
+    return response.json();
   }
 
   async apiCall(url, options = {}) {
-    let token = this.accessToken;
-    
-    // Try the request with current token
     let response = await fetch(url, {
       ...options,
-      headers: {
-        ...options.headers,
-        'Authorization': `Bearer ${token}`
-      }
+      credentials: 'include',
+      headers: { ...options.headers }
     });
 
-    // If token expired, try to refresh
+    // If access cookie expired, refresh and retry once
     if (response.status === 401) {
-      token = await this.refreshAccessToken();
+      await this.refreshAccessToken();
       response = await fetch(url, {
         ...options,
-        headers: {
-          ...options.headers,
-          'Authorization': `Bearer ${token}`
-        }
+        credentials: 'include',
+        headers: { ...options.headers }
       });
     }
 
     return response;
-  }
-
-  setTokens(session) {
-    this.accessToken = session.accessToken;
-    this.refreshToken = session.refreshToken;
-    this.sessionId = session.sessionId;
-    
-    localStorage.setItem('accessToken', session.accessToken);
-    localStorage.setItem('refreshToken', session.refreshToken);
-    localStorage.setItem('sessionId', session.sessionId);
-  }
-
-  logout() {
-    this.accessToken = null;
-    this.refreshToken = null;
-    this.sessionId = null;
-    
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-    localStorage.removeItem('sessionId');
   }
 }
 ```
@@ -424,17 +474,22 @@ Common error codes returned by the authentication system:
 - `PASSWORD_CHANGED`: Password changed after token issued
 - `EMAIL_NOT_VERIFIED`: Email verification required
 - `INSUFFICIENT_PERMISSIONS`: User lacks required role
+- `CSRF_INVALID`: Missing/invalid CSRF double-submit token
+- `MISSING_REFRESH_DATA`: Missing refresh cookies
+- `REFRESH_SESSION_MISMATCH`: Refresh token sessionId mismatch
+- `REFRESH_SESSION_INVALID`: Invalid refresh session (not found / hash mismatch)
+- `REFRESH_TOKEN_INVALID`: Invalid refresh token
 - `REFRESH_TOKEN_EXPIRED`: Refresh token has expired
-- `REFRESH_SESSION_INVALID`: Invalid refresh session
+- `CMS_ORIGIN_BLOCKED`: Admin auth request blocked by `CMS_ORIGIN`
 
 ## Migration from Old System
 
 If you had a simple JWT system before:
 
 1. **Database Migration**: Users will need to login again to create sessions
-2. **Client Updates**: Update frontend to handle refresh tokens
+2. **Client Updates**: Update frontend to use cookie-based auth + CSRF (`/csrf-token` + `x-xsrf-token`)
 3. **Token Validation**: All existing tokens will be invalid
-4. **Environment**: Add `JWT_REFRESH_SECRET` to your environment
+4. **Environment**: Ensure `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET` are set
 
 ## Monitoring
 
@@ -442,9 +497,7 @@ Monitor your session system with:
 
 ```javascript
 // Check session statistics
-const stats = await fetch('/api/admin/sessions/stats', {
-  headers: { 'Authorization': `Bearer ${adminToken}` }
-});
+const stats = await fetch('/api/admin/sessions/stats', { credentials: 'include' });
 
 console.log(await stats.json());
 // {

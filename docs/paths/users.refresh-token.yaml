@@ -1,0 +1,27 @@
+post:
+  tags: [Users]
+  summary: Refresh access token
+  description: Rotates refresh token and returns a new access token (cookies are updated).
+  parameters:
+    - $ref: ../openapi.yaml#/components/parameters/XRequestId
+  security:
+    - RefreshTokenCookie: []
+      SessionIdCookie: []
+      CsrfCookie: []
+      CsrfHeader: []
+  responses:
+    '200':
+      description: OK
+      headers:
+        x-request-id:
+          $ref: ../openapi.yaml#/components/headers/XRequestId
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/RefreshTokenResponse
+    '401':
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/ErrorResponse

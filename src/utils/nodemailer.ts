@@ -1,6 +1,8 @@
 import nodemailer from 'nodemailer';
-import dotenv from 'dotenv';
-dotenv.config();
+import logger from './logger.js';
+import { loadEnv } from './env.js';
+
+loadEnv();
 
 type MailOptions = {
   recipient: string | string[];
@@ -9,11 +11,15 @@ type MailOptions = {
   html?: string;
 };
 
-async function sendMail(recipient: string | string[], subject: string, text?: string, html?: string) {
+let cachedTransporter: nodemailer.Transporter | null = null;
+
+function getTransporter(): nodemailer.Transporter {
+  if (cachedTransporter) return cachedTransporter;
+
   const port = process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : undefined;
   const secure = process.env.SMTP_SECURE ? process.env.SMTP_SECURE === 'true' : (port === 465);
 
-  const transporter = nodemailer.createTransport({
+  cachedTransporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port,
     secure,
@@ -22,6 +28,12 @@ async function sendMail(recipient: string | string[], subject: string, text?: st
       pass: process.env.SMTP_PASS,
     } : undefined,
   });
+
+  return cachedTransporter;
+}
+
+async function sendMail(recipient: string | string[], subject: string, text?: string, html?: string) {
+  const transporter = getTransporter();
 
   const from = process.env.SMTP_USERNAME && process.env.SMTP_USER ? `"${process.env.SMTP_USERNAME}" <${process.env.SMTP_USER}>` : process.env.SMTP_USER || undefined;
 
@@ -33,13 +45,10 @@ async function sendMail(recipient: string | string[], subject: string, text?: st
       text,
       html,
     });
-    // prefer logger when available
-    // eslint-disable-next-line no-console
-    console.log('Message sent: %s', info.messageId);
+    logger.info('Email sent', { messageId: info.messageId });
     return info;
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error('Error sending email', err);
+    logger.error('Error sending email', { error: err instanceof Error ? err.message : String(err) });
     throw err;
   }
 }

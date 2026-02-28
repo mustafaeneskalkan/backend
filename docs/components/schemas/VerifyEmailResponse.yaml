@@ -1,0 +1,9 @@
+type: object
+required:
+  - message
+  - user
+properties:
+  message:
+    type: string
+  user:
+    $ref: ../../openapi.yaml#/components/schemas/UserPublic

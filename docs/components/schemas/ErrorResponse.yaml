@@ -1,0 +1,16 @@
+type: object
+additionalProperties: true
+required:
+  - error
+properties:
+  error:
+    type: string
+  code:
+    type: string
+  details:
+    oneOf:
+      - type: string
+      - type: array
+        items:
+          type: string
+      - type: object

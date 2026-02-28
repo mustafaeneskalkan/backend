@@ -1,8 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import User, { IUser } from '../models/user.js';
+import Session from '../models/session.js';
 import { JWTPayload } from '../types/custom.js';
 import logger from '../utils/logger.js';
+import { hashRefreshToken, safeEqualHex } from '../utils/token-hash.js';
+import { ACCESS_TOKEN_COOKIE_NAME, REFRESH_TOKEN_COOKIE_NAME, SESSION_ID_COOKIE_NAME } from '../utils/cookies.js';
 
 /**
  * Middleware to authenticate JWT tokens and validate sessions
@@ -13,7 +16,7 @@ export const authenticateToken = async (
   next: NextFunction
 ): Promise<void> => {
   const startTime = Date.now();
-  const requestId = req.headers['x-request-id'] || 'unknown';
+  const requestId = req.requestId || req.headers['x-request-id'] || 'unknown';
   
   logger.debug('[AUTH] Starting token authentication', {
     requestId,
@@ -24,8 +27,8 @@ export const authenticateToken = async (
   });
 
   try {
-    const authHeader = req.headers.authorization;
-    const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+    const cookieToken = (req as any).cookies?.[ACCESS_TOKEN_COOKIE_NAME] as string | undefined;
+    const token = cookieToken;
 
     if (!token) {
       logger.debug('[AUTH] No token provided', { requestId, path: req.path });
@@ -36,14 +39,14 @@ export const authenticateToken = async (
       return;
     }
 
-    if (!process.env.JWT_SECRET) {
-      logger.error('[AUTH] JWT_SECRET not configured', { requestId });
-      throw new Error('JWT_SECRET not configured');
+    if (!process.env.JWT_ACCESS_SECRET) {
+      logger.error('[AUTH] JWT_ACCESS_SECRET not configured', { requestId });
+      throw new Error('JWT_ACCESS_SECRET not configured');
     }
 
     // Verify access token
     logger.debug('[AUTH] Verifying JWT token', { requestId, tokenLength: token.length });
-    const payload = jwt.verify(token, process.env.JWT_SECRET) as JWTPayload;
+    const payload = jwt.verify(token, process.env.JWT_ACCESS_SECRET) as JWTPayload;
     
     logger.debug('[AUTH] JWT verified successfully', { 
       requestId, 
@@ -67,31 +70,21 @@ export const authenticateToken = async (
       return;
     }
 
-    logger.debug('[AUTH] User found', { 
-      requestId, 
-      userId: user._id, 
-      username: user.username,
-      activeSessionsCount: user.sessions?.length || 0
-    });
+    const now = new Date();
 
     // Check if session exists and is active
-    const session = user.sessions?.find((s: any) => 
-      s.sessionId === payload.sessionId && 
-      s.isActive && 
-      s.expiresAt > new Date()
-    );
+    const session = await Session.findOne({
+      userId: user._id,
+      sessionId: payload.sessionId,
+      isActive: true,
+      expiresAt: { $gt: now }
+    });
 
     if (!session) {
       logger.warn('[AUTH] Session not found or invalid', { 
         requestId, 
         userId: user._id,
-        sessionId: payload.sessionId,
-        availableSessions: user.sessions?.map((s: any) => ({
-          sessionId: s.sessionId,
-          isActive: s.isActive,
-          expiresAt: s.expiresAt,
-          expired: s.expiresAt <= new Date()
-        })) || []
+        sessionId: payload.sessionId
       });
       res.status(401).json({ 
         error: 'Invalid session',
@@ -124,19 +117,35 @@ export const authenticateToken = async (
       return;
     }
 
-    // Update last activity
-    logger.debug('[AUTH] Updating session last activity', { 
-      requestId, 
-      userId: user._id,
-      sessionId: payload.sessionId
-    });
-    
-    user.sessions = user.sessions?.map((s: any) => 
-      s.sessionId === payload.sessionId 
-        ? { ...s, lastActivity: new Date() }
-        : s
-    ) || [];
-    await user.save();
+    // Update last activity (throttled + targeted write)
+    const throttleSecondsRaw = process.env.SESSION_ACTIVITY_THROTTLE_SECONDS;
+    const throttleSeconds = throttleSecondsRaw ? Number(throttleSecondsRaw) : 300;
+    const throttleMs = Number.isFinite(throttleSeconds) && throttleSeconds > 0 ? throttleSeconds * 1000 : 300_000;
+
+    const lastActivityDate = session.lastActivity ? new Date(session.lastActivity) : undefined;
+    const shouldUpdateLastActivity =
+      !lastActivityDate || Number.isNaN(lastActivityDate.getTime()) || (Date.now() - lastActivityDate.getTime() > throttleMs);
+
+    if (shouldUpdateLastActivity) {
+      logger.debug('[AUTH] Updating session last activity (throttled)', {
+        requestId,
+        userId: user._id,
+        sessionId: payload.sessionId,
+        throttleMs
+      });
+
+      void Session.updateOne(
+        { userId: user._id, sessionId: payload.sessionId },
+        { $set: { lastActivity: new Date() } }
+      ).catch((err: unknown) => {
+        logger.warn('[AUTH] Failed to update session last activity', {
+          requestId,
+          userId: user._id,
+          sessionId: payload.sessionId,
+          error: err instanceof Error ? err.message : String(err)
+        });
+      });
+    }
 
     // Attach user and session info to request
     req.user = user;
@@ -206,7 +215,7 @@ export const authenticateRefreshToken = async (
   next: NextFunction
 ): Promise<void> => {
   const startTime = Date.now();
-  const requestId = req.headers['x-request-id'] || 'unknown';
+  const requestId = req.requestId || req.headers['x-request-id'] || 'unknown';
   
   logger.debug('[REFRESH] Starting refresh token authentication', {
     requestId,
@@ -215,7 +224,8 @@ export const authenticateRefreshToken = async (
   });
 
   try {
-    const { refreshToken, sessionId } = req.body;
+    const refreshToken = (req as any).cookies?.[REFRESH_TOKEN_COOKIE_NAME] as string | undefined;
+    const sessionId = (req as any).cookies?.[SESSION_ID_COOKIE_NAME] as string | undefined;
 
     if (!refreshToken || !sessionId) {
       logger.debug('[REFRESH] Missing refresh data', { 
@@ -249,8 +259,48 @@ export const authenticateRefreshToken = async (
       sessionId: payload.sessionId,
       requestedSessionId: sessionId
     });
+
+    if (payload.sessionId !== sessionId) {
+      logger.warn('[REFRESH] SessionId mismatch for refresh token', {
+        requestId,
+        userId: payload.userId,
+        tokenSessionId: payload.sessionId,
+        requestedSessionId: sessionId
+      });
+      res.status(401).json({
+        error: 'Invalid refresh session',
+        code: 'REFRESH_SESSION_MISMATCH'
+      });
+      return;
+    }
     
-    // Find user
+    const presentedHash = hashRefreshToken(refreshToken);
+
+    const now = new Date();
+    const session = await Session.findOne({
+      userId: payload.userId,
+      sessionId,
+      isActive: true,
+      expiresAt: { $gt: now }
+    });
+
+    const tokenMatches = !!session && safeEqualHex(session.refreshTokenHash, presentedHash);
+
+    if (!session || !tokenMatches) {
+      logger.warn('[REFRESH] Invalid refresh session', { 
+        requestId, 
+        userId: payload.userId,
+        sessionId,
+        tokenMatches
+      });
+      res.status(401).json({ 
+        error: 'Invalid refresh session',
+        code: 'REFRESH_SESSION_INVALID'
+      });
+      return;
+    }
+
+    // Find user (after session check to avoid leaking user existence)
     const user = await User.findById(payload.userId);
     if (!user) {
       logger.warn('[REFRESH] User not found for refresh token', { 
@@ -265,36 +315,17 @@ export const authenticateRefreshToken = async (
       return;
     }
 
-    logger.debug('[REFRESH] User found for refresh', { 
-      requestId, 
-      userId: user._id,
-      username: user.username,
-      activeSessionsCount: user.sessions?.length || 0
-    });
-
-    // Validate session and refresh token
-    const session = user.sessions?.find((s: any) => 
-      s.sessionId === sessionId && 
-      s.refreshToken === refreshToken &&
-      s.isActive && 
-      s.expiresAt > new Date()
-    );
-
-    if (!session) {
-      logger.warn('[REFRESH] Invalid refresh session', { 
-        requestId, 
+    // Check if password was changed after token was issued
+    if (user.passwordChangedAt && new Date(payload.iat * 1000) < user.passwordChangedAt) {
+      logger.warn('[REFRESH] Password changed after refresh token issued', {
+        requestId,
         userId: user._id,
-        sessionId,
-        availableSessions: user.sessions?.map((s: any) => ({
-          sessionId: s.sessionId,
-          isActive: s.isActive,
-          expiresAt: s.expiresAt,
-          tokenMatches: s.refreshToken === refreshToken
-        })) || []
+        sessionId
       });
-      res.status(401).json({ 
-        error: 'Invalid refresh session',
-        code: 'REFRESH_SESSION_INVALID'
+      await Session.deleteOne({ _id: session._id }).catch(() => undefined);
+      res.status(401).json({
+        error: 'Password recently changed. Please login again.',
+        code: 'PASSWORD_CHANGED'
       });
       return;
     }
@@ -369,7 +400,7 @@ export const requireEmailVerification = (
   res: Response,
   next: NextFunction
 ): void => {
-  const requestId = req.headers['x-request-id'] || 'unknown';
+  const requestId = req.requestId || req.headers['x-request-id'] || 'unknown';
   const userId = req.user?._id;
   const emailVerified = req.user?.emailVerification?.emailVerified;
   
@@ -405,7 +436,7 @@ export const requireEmailVerification = (
  */
 export const requireRole = (roles: string[]) => {
   return (req: Request, res: Response, next: NextFunction): void => {
-    const requestId = req.headers['x-request-id'] || 'unknown';
+    const requestId = req.requestId || req.headers['x-request-id'] || 'unknown';
     const userId = req.user?._id;
     const userRole = req.user?.role;
     
@@ -463,9 +494,8 @@ export const optionalAuth = async (
   res: Response,
   next: NextFunction
 ): Promise<void> => {
-  const requestId = req.headers['x-request-id'] || 'unknown';
-  const authHeader = req.headers.authorization;
-  const token = authHeader && authHeader.split(' ')[1];
+  const requestId = req.requestId || req.headers['x-request-id'] || 'unknown';
+  const token = (req as any).cookies?.[ACCESS_TOKEN_COOKIE_NAME] as string | undefined;
 
   logger.debug('[OPTIONAL_AUTH] Starting optional authentication', {
     requestId,
@@ -480,19 +510,20 @@ export const optionalAuth = async (
   }
 
   try {
-    if (!process.env.JWT_SECRET) {
-      throw new Error('JWT_SECRET not configured');
+    if (!process.env.JWT_ACCESS_SECRET) {
+      throw new Error('JWT_ACCESS_SECRET not configured');
     }
 
-    const payload = jwt.verify(token, process.env.JWT_SECRET) as JWTPayload;
+    const payload = jwt.verify(token, process.env.JWT_ACCESS_SECRET) as JWTPayload;
     const user = await User.findById(payload.userId);
     
     if (user) {
-      const session = user.sessions?.find((s: any) => 
-        s.sessionId === payload.sessionId && 
-        s.isActive && 
-        s.expiresAt > new Date()
-      );
+      const session = await Session.findOne({
+        userId: user._id,
+        sessionId: payload.sessionId,
+        isActive: true,
+        expiresAt: { $gt: new Date() }
+      });
 
       if (session && (!user.passwordChangedAt || new Date(payload.iat * 1000) >= user.passwordChangedAt)) {
         req.user = user;
