@@ -99,7 +99,7 @@ backend/
 3. **Environment Configuration**
    
    Create a `.env` file in the root directory:
-    ```env
+  ```env
   # Server Configuration
   PORT=4000
   NODE_ENV=development
@@ -152,7 +152,7 @@ backend/
 
   # Logging
   LOG_LEVEL=debug
-    ```
+  ```
 
 4. **Start the development server**
    ```bash
