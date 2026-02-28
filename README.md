@@ -99,17 +99,17 @@ backend/
 3. **Environment Configuration**
    
    Create a `.env` file in the root directory:
-   ```env
-   # Server Configuration
-   PORT=4000
-   NODE_ENV=development
-   
-   # Database
-   MONGODB_URI=mongodb://localhost:27017/backend
-   
-   # JWT Secrets (use strong, unique secrets in production)
+    ```env
+  # Server Configuration
+  PORT=4000
+  NODE_ENV=development
+
+  # Database
+  MONGODB_URI=mongodb://localhost:27017/backend
+
+  # JWT Secrets (use strong, unique secrets in production)
   JWT_ACCESS_SECRET=your-super-secret-jwt-key-for-access-tokens
-   JWT_REFRESH_SECRET=your-super-secret-jwt-key-for-refresh-tokens
+  JWT_REFRESH_SECRET=your-super-secret-jwt-key-for-refresh-tokens
 
   # Optional: separate secret for email verification tokens
   JWT_EMAIL_VERIFY_SECRET=your-super-secret-jwt-key-for-email-verification
@@ -119,15 +119,15 @@ backend/
 
   # Optional: HMAC secret for hashing refresh tokens at rest
   REFRESH_TOKEN_HASH_SECRET=your-super-secret-hmac-key
-   
-   # CORS Configuration
-   CORS_ORIGIN=http://localhost:3000
+
+  # CORS Configuration
+  CORS_ORIGIN=http://localhost:3000
 
   # Frontend base URL (used to build verify/reset links in emails)
   FRONTEND_URL=http://localhost:3000
-   
-   # CSRF Configuration
-   CSRF_COOKIE_NAME=XSRF-TOKEN
+
+  # CSRF Configuration
+  CSRF_COOKIE_NAME=XSRF-TOKEN
 
   # Optional: cookie config
   # COOKIE_SAME_SITE=lax|strict|none
@@ -140,7 +140,7 @@ backend/
   # Optional: session tuning
   # MAX_ACTIVE_SESSIONS_PER_USER=5
   # SESSION_ACTIVITY_THROTTLE_SECONDS=300
-   
+
   # Email (SMTP)
   SMTP_HOST=smtp.example.com
   SMTP_PORT=587
@@ -149,10 +149,10 @@ backend/
   SMTP_PASS=your-smtp-password
   # Optional: friendly display name in From header
   SMTP_USERNAME=Backend Template
-   
-   # Logging
-   LOG_LEVEL=debug
-   ```
+
+  # Logging
+  LOG_LEVEL=debug
+    ```
 
 4. **Start the development server**
    ```bash
